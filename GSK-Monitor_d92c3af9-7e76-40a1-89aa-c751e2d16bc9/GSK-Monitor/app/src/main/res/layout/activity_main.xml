@@ -5,50 +5,43 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothProfile;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.widget.ArrayAdapter;
-import android.widget.ListView;
-import android.widget.Toast;
+import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class MainActivity extends AppCompatActivity {
 
-    private ListView deviceList;
-    private ArrayAdapter<String> adapter;
-    private final List<BluetoothDevice> devices = new ArrayList<>();
+    private static final String DEVICE_ADDRESS = "E8:88:6C:42:62:77";
+
+    private TextView status;
+    private BluetoothGatt bluetoothGatt;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        deviceList = new ListView(this);
-        adapter = new ArrayAdapter<>(
-                this,
-                android.R.layout.simple_list_item_1
-        );
+        status = new TextView(this);
+        status.setTextSize(20);
+        status.setPadding(32, 64, 32, 32);
+        status.setText("GSK Monitor\nПідключення до GSIKE...");
 
-        deviceList.setAdapter(adapter);
-        setContentView(deviceList);
+        setContentView(status);
 
-        deviceList.setOnItemClickListener((parent, view, position, id) -> {
-            BluetoothDevice device = devices.get(position);
-            connectToDevice(device);
-        });
+        connectToKnownDevice();
     }
 
-    private void connectToDevice(BluetoothDevice device) {
+    private void connectToKnownDevice() {
 
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-        ) != PackageManager.PERMISSION_GRANTED) {
+        if (android.os.Build.VERSION.SDK_INT >= 31 &&
+                ActivityCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED) {
 
             ActivityCompat.requestPermissions(
                     this,
@@ -57,79 +50,193 @@ public class MainActivity extends AppCompatActivity {
                     },
                     100
             );
+
             return;
         }
 
-        Toast.makeText(
-                this,
-                "Підключення до " + device.getName(),
-                Toast.LENGTH_SHORT
-        ).show();
+        BluetoothAdapter adapter =
+                BluetoothAdapter.getDefaultAdapter();
 
-        device.connectGatt(
+        if (adapter == null) {
+            showStatus("Bluetooth не підтримується");
+            return;
+        }
+
+        if (!adapter.isEnabled()) {
+            showStatus("Увімкни Bluetooth");
+            return;
+        }
+
+        BluetoothDevice device;
+
+        try {
+            device = adapter.getRemoteDevice(DEVICE_ADDRESS);
+        } catch (IllegalArgumentException e) {
+            showStatus("Невірна BLE адреса");
+            return;
+        }
+
+        showStatus(
+                "GSK Monitor\n" +
+                "GSIKE знайдено\n" +
+                DEVICE_ADDRESS +
+                "\n\nПідключення..."
+        );
+
+        bluetoothGatt = device.connectGatt(
                 this,
                 false,
-                new BluetoothGattCallback() {
-
-                    @Override
-                    public void onConnectionStateChange(
-                            BluetoothGatt gatt,
-                            int status,
-                            int newState
-                    ) {
-
-                        if (newState == BluetoothProfile.STATE_CONNECTED) {
-
-                            runOnUiThread(() ->
-                                    Toast.makeText(
-                                            MainActivity.this,
-                                            "GSIKE підключено",
-                                            Toast.LENGTH_LONG
-                                    ).show()
-                            );
-
-                            gatt.discoverServices();
-
-                        } else if (
-                                newState == BluetoothProfile.STATE_DISCONNECTED
-                        ) {
-
-                            runOnUiThread(() ->
-                                    Toast.makeText(
-                                            MainActivity.this,
-                                            "GSIKE відключено",
-                                            Toast.LENGTH_LONG
-                                    ).show()
-                            );
-                        }
-                    }
-                }
+                gattCallback,
+                BluetoothDevice.TRANSPORT_LE
         );
     }
 
-    public void
- addDevice(BluetoothDevice device) {
+    private final BluetoothGattCallback gattCallback =
+            new BluetoothGattCallback() {
 
-        if (!devices.contains(device)) {
-            devices.add(device);
+        @Override
+        public void onConnectionStateChange(
+                BluetoothGatt gatt,
+                int statusCode,
+                int newState
+        ) {
 
-            if (ActivityCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.BLUETOOTH_CONNECT
-            ) == PackageManager.PERMISSION_GRANTED) {
+            if (newState ==
+                    BluetoothProfile.STATE_CONNECTED) {
 
-                String name = device.getName();
-
-                if (name == null || name.isEmpty()) {
-                    name = "BLE пристрій";
-                }
-
-                adapter.add(
-                        name + "\n" + device.getAddress()
+                showStatus(
+                        "GSK Monitor\n" +
+                        "GSIKE ПІДКЛЮЧЕНО\n\n" +
+                        "Пошук BLE служб..."
                 );
 
-                adapter.notifyDataSetChanged();
+                if
+(hasBluetoothPermission()) {
+                    gatt.discoverServices();
+                }
+
+            } else if (
+                    newState ==
+                    BluetoothProfile.STATE_DISCONNECTED) {
+
+                showStatus(
+                        "GSK Monitor\n" +
+                        "GSIKE відключено\n\n" +
+                        "Код: " + statusCode
+                );
             }
+        }
+
+        @Override
+        public void onServicesDiscovered(
+                BluetoothGatt gatt,
+                int statusCode
+        ) {
+
+            if (statusCode != BluetoothGatt.GATT_SUCCESS) {
+
+                showStatus(
+                        "GSIKE підключено,\n" +
+                        "але BLE служби не знайдені.\n\n" +
+                        "Код: " + statusCode
+                );
+
+                return;
+            }
+
+            StringBuilder result =
+                    new StringBuilder();
+
+            result.append("GSK Monitor\n");
+            result.append("GSIKE ПІДКЛЮЧЕНО\n\n");
+
+            result.append("BLE служб: ")
+                    .append(gatt.getServices().size())
+                    .append("\n\n");
+
+            for (android.bluetooth.BluetoothGattService service
+                    : gatt.getServices()) {
+
+                result.append("SERVICE\n");
+                result.append(service.getUuid())
+                        .append("\n");
+
+                for (BluetoothGattCharacteristic characteristic
+                        : service.getCharacteristics()) {
+
+                    result.append("  CHARACTERISTIC\n");
+                    result.append("  ")
+                            .append(characteristic.getUuid())
+                            .append("\n");
+                }
+
+                result.append("\n");
+            }
+
+            showStatus(result.toString());
+        }
+
+        @Override
+        public void onCharacteristicChanged(
+                BluetoothGatt gatt,
+                BluetoothGattCharacteristic characteristic
+        ) {
+
+            byte[] data =
+                    characteristic.getValue();
+
+            StringBuilder hex =
+                    new StringBuilder();
+
+            for (byte b : data) {
+                hex.append(
+                        String.format("%02X ", b)
+                );
+            }
+
+            showStatus(
+                    "GSK Monitor\n" +
+                    "GSIKE ПІДКЛЮЧЕНО\n\n" +
+                    "BLE DATA\n" +
+                    characteristic.getUuid() +
+                    "\n\n" +
+                    hex
+            );
+        }
+    };
+
+    private boolean hasBluetoothPermission() {
+
+        if (android.os.Build.VERSION.SDK_INT < 31) {
+            return true;
+        }
+
+        return ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT
+        ) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void showStatus(String message) {
+
+        runOnUiThread(() ->
+                status.setText(message)
+        );
+    }
+
+    @Override
+    protected void onDestroy() {
+
+        super.onDestroy();
+
+        if (bluetoothGatt != null) {
+
+            if (hasBluetoothPermission()) {
+                bluetoothGatt.disconnect();
+            }
+
+            bluetoothGatt.close();
+            bluetoothGatt = null;
         }
     }
 }
