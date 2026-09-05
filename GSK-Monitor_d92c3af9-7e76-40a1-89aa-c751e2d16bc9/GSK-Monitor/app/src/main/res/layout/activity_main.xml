@@ -1,8 +1,135 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:padding="16dp" android:layout_width="match_parent" android:layout_height="match_parent">
-    <TextView android:text="GSK Monitor" android:textSize="28sp" android:textStyle="bold" android:layout_width="match_parent" android:layout_height="wrap_content" />
-    <TextView android:id="@+id/status" android:text="Готово" android:paddingTop="8dp" android:paddingBottom="12dp" android:layout_width="match_parent" android:layout_height="wrap_content" />
-    <Button android:id="@+id/scan" android:text="Сканувати BLE" android:layout_width="match_parent" android:layout_height="wrap_content" />
-    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="12dp">
-        <TextView android:id="@+id/log" android:textSize="14sp" android:fontFamily="monospace" android:layout_width="match_parent" android:layout_height="wrap_content" />
-    </ScrollView>
-</LinearLayout>
+package com.gskmonitor;
+
+import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothProfile;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.widget.ArrayAdapter;
+import android.widget.ListView;
+import android.widget.Toast;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends AppCompatActivity {
+
+    private ListView deviceList;
+    private ArrayAdapter<String> adapter;
+    private final List<BluetoothDevice> devices = new ArrayList<>();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        deviceList = new ListView(this);
+        adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_list_item_1
+        );
+
+        deviceList.setAdapter(adapter);
+        setContentView(deviceList);
+
+        deviceList.setOnItemClickListener((parent, view, position, id) -> {
+            BluetoothDevice device = devices.get(position);
+            connectToDevice(device);
+        });
+    }
+
+    private void connectToDevice(BluetoothDevice device) {
+
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT
+        ) != PackageManager.PERMISSION_GRANTED) {
+
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{
+                            Manifest.permission.BLUETOOTH_CONNECT
+                    },
+                    100
+            );
+            return;
+        }
+
+        Toast.makeText(
+                this,
+                "Підключення до " + device.getName(),
+                Toast.LENGTH_SHORT
+        ).show();
+
+        device.connectGatt(
+                this,
+                false,
+                new BluetoothGattCallback() {
+
+                    @Override
+                    public void onConnectionStateChange(
+                            BluetoothGatt gatt,
+                            int status,
+                            int newState
+                    ) {
+
+                        if (newState == BluetoothProfile.STATE_CONNECTED) {
+
+                            runOnUiThread(() ->
+                                    Toast.makeText(
+                                            MainActivity.this,
+                                            "GSIKE підключено",
+                                            Toast.LENGTH_LONG
+                                    ).show()
+                            );
+
+                            gatt.discoverServices();
+
+                        } else if (
+                                newState == BluetoothProfile.STATE_DISCONNECTED
+                        ) {
+
+                            runOnUiThread(() ->
+                                    Toast.makeText(
+                                            MainActivity.this,
+                                            "GSIKE відключено",
+                                            Toast.LENGTH_LONG
+                                    ).show()
+                            );
+                        }
+                    }
+                }
+        );
+    }
+
+    public void
+ addDevice(BluetoothDevice device) {
+
+        if (!devices.contains(device)) {
+            devices.add(device);
+
+            if (ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.BLUETOOTH_CONNECT
+            ) == PackageManager.PERMISSION_GRANTED) {
+
+                String name = device.getName();
+
+                if (name == null || name.isEmpty()) {
+                    name = "BLE пристрій";
+                }
+
+                adapter.add(
+                        name + "\n" + device.getAddress()
+                );
+
+                adapter.notifyDataSetChanged();
+            }
+        }
+    }
+}
