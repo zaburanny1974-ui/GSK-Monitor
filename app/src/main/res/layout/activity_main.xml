@@ -1,0 +1,8 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:padding="16dp" android:layout_width="match_parent" android:layout_height="match_parent">
+    <TextView android:text="GSK Monitor" android:textSize="28sp" android:textStyle="bold" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <TextView android:id="@+id/status" android:text="Готово" android:paddingTop="8dp" android:paddingBottom="12dp" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <Button android:id="@+id/scan" android:text="Сканувати BLE" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="12dp">
+        <TextView android:id="@+id/log" android:textSize="14sp" android:fontFamily="monospace" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    </ScrollView>
+</LinearLayout>
